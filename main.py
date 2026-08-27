@@ -108,15 +108,15 @@ if market_data is None:
 curr_price = market_data['price']
 now_str = datetime.now().strftime("%H:%M:%S")
 
-# 1초 단위 캔들 갱신 로직 (시가/고가/저가/종가)
+# 1초 단위 캔들 갱신 로직 (문법 에러 수정 완료)
 if not st.session_state.ohlc_data:
+    init_vol = curr_price * 0.05
     st.session_state.ohlc_data.append({
         "time": now_str, "open": curr_price, "high": curr_price,
-        "low": curr_price, "close": curr_price, "vol": random_vol := (curr_price * 0.05)
+        "low": curr_price, "close": curr_price, "vol": init_vol
     })
 else:
     last_candle = st.session_state.ohlc_data[-1]
-    # 새로운 틱 생성 (약간의 자율 변동으로 캔들 움직임 극대화)
     new_open = last_candle["close"]
     new_high = max(new_open, curr_price)
     new_low = min(new_open, curr_price)
@@ -183,7 +183,6 @@ st.markdown(f"""
 col_left, col_right = st.columns([7, 5])
 
 with col_left:
-    # --- Plotly 서브플롯 전문 차트 생성 (캔들스틱 + 거래량 + RSI) ---
     rows = 3 if show_rsi else 2
     row_heights = [0.6, 0.2, 0.2] if show_rsi else [0.7, 0.3]
     
@@ -195,7 +194,7 @@ with col_left:
         increasing_line_color='#0ecb81', decreasing_line_color='#f6465d', name="OHLC"
     ), row=1, col=1)
     
-    # 이동평균선 토글 적용
+    # 이동평균선 토글
     if show_ma5:
         fig.add_trace(go.Scatter(x=df['time'], y=df['MA5'], mode='lines', line=dict(color='#f0b90b', width=1.2), name="MA5"), row=1, col=1)
     if show_ma20:
@@ -207,7 +206,7 @@ with col_left:
     colors = ['#0ecb81' if c >= o else '#f6465d' for c, o in zip(df['close'], df['open'])]
     fig.add_trace(go.Bar(x=df['time'], y=df['vol'], marker_color=colors, name="Volume"), row=2, col=1)
     
-    # 3) RSI (선택 시)
+    # 3) RSI
     if show_rsi:
         fig.add_trace(go.Scatter(x=df['time'], y=df['RSI'], line=dict(color='#f0b90b', width=1), name="RSI(14)"), row=3, col=1)
         fig.add_hline(y=70, line_dash="dash", line_color="#f6465d", row=3, col=1)
@@ -220,11 +219,10 @@ with col_left:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- 주문 패널 (수량 계산 및 수치 입력 강화) ---
+    # --- 주문 패널 ---
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
     st.markdown("##### ⚡ ORDER PANEL")
     
-    # 주문 수량 / 금액 지정
     o_col1, o_col2 = st.columns(2)
     with o_col1:
         custom_margin = st.number_input("증거금 직접 입력 (KRW)", min_value=0, max_value=int(st.session_state.cash), value=int(st.session_state.cash), step=100000)
@@ -233,19 +231,16 @@ with col_left:
         st.write(" ")
         st.write(f"📊 주문 수량: **{coin_qty:.4f} 코인**")
 
-    # 비율 선택 버튼
     b1, b2, b3, b4 = st.columns(4)
     if b1.button("25%"): custom_margin = st.session_state.cash * 0.25
     if b2.button("50%"): custom_margin = st.session_state.cash * 0.50
     if b3.button("75%"): custom_margin = st.session_state.cash * 0.75
     if b4.button("100% Max"): custom_margin = st.session_state.cash
 
-    # TP / SL
     tp_col, sl_col = st.columns(2)
     with tp_col: st.session_state.tp_pct = st.number_input("목표 익절 (TP %)", value=st.session_state.tp_pct, step=5.0)
     with sl_col: st.session_state.sl_pct = st.number_input("최대 손절 (SL %)", value=st.session_state.sl_pct, step=5.0)
 
-    # 롱 / 숏 주문 버튼
     btn1, btn2 = st.columns(2)
     with btn1:
         st.markdown('<div class="btn-long">', unsafe_allow_html=True)
@@ -273,7 +268,6 @@ with col_left:
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # 제어 버튼
     m1, m2, m3 = st.columns(3)
     with m1:
         if st.button("✂️ 50% 반익/반손", use_container_width=True, disabled=st.session_state.position_type is None):
@@ -305,7 +299,6 @@ with col_left:
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col_right:
-    # --- 포지션 및 호가/주문 대시보드 ---
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
     st.markdown("##### 💼 ACCOUNT & POSITION SUMMARY")
     st.markdown(f"**Total Wallet Balance:** `{int(total_asset):,} KRW`")
@@ -327,19 +320,20 @@ with col_right:
         st.info("보유 중인 포지션이 없습니다.")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 가상 호가창 (Orderbook) - 매수/매도 잔량 시각화
+    # 호가창 잔량 표시 (가상)
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
     st.markdown("##### 📖 REAL-TIME ORDERBOOK (호가창)")
     for i in range(3, 0, -1):
         ask_p = curr_price + (i * 1000)
-        st.caption(f"🔴 매도호가 {ask_p:,.0f} KRW | 잔량: {random_vol := int(ask_p * 0.002):,} Qty")
+        ask_vol = int(ask_p * 0.002)
+        st.caption(f"🔴 매도호가 {ask_p:,.0f} KRW | 잔량: {ask_vol:,} Qty")
     st.markdown(f"**🟢 현재가 {curr_price:,.0f} KRW**")
     for i in range(1, 4):
         bid_p = curr_price - (i * 1000)
-        st.caption(f"🟢 매수호가 {bid_p:,.0f} KRW | 잔량: {int(bid_p * 0.0025):,} Qty")
+        bid_vol = int(bid_p * 0.0025)
+        st.caption(f"🟢 매수호가 {bid_p:,.0f} KRW | 잔량: {bid_vol:,} Qty")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 체결 로그
     with st.expander("📜 Execution Logs", expanded=True):
         for log in st.session_state.trade_logs[:8]:
             st.caption(log)
