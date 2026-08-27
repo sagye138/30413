@@ -37,7 +37,7 @@ st.markdown("""
         -webkit-text-fill-color: #ffffff !important;
     }
 
-    /* 코인 선택창 (Selectbox) 전체 요소 CSS 강제 고정 */
+    /* Selectbox 커스텀 */
     div[data-baseweb="select"], 
     div[data-baseweb="select"] *,
     div[data-baseweb="popover"],
@@ -50,7 +50,6 @@ st.markdown("""
         -webkit-text-fill-color: #ffffff !important;
     }
     
-    /* 선택목록 마우스 호버 시 처리 */
     ul[role="listbox"] li:hover,
     div[role="option"]:hover,
     li[aria-selected="true"] {
@@ -59,10 +58,7 @@ st.markdown("""
         -webkit-text-fill-color: #0ecb81 !important;
     }
     
-    /* 라벨 및 텍스트 흰색 설정 */
-    label, p, span, div {
-        color: #ffffff !important;
-    }
+    label, p, span, div { color: #ffffff !important; }
     .gray-text { color: #848e9c !important; }
 
     /* 버튼 스타일 */
@@ -109,7 +105,17 @@ def get_upbit_all_details(tickers):
     except Exception:
         return {}
 
-# 3. 세션 상태 초기화
+# 3. 마켓 티커 설정
+coin_map = {
+    "BTC/KRW (비트코인)": "KRW-BTC",
+    "LTC/BTC (라이트코인)": "BTC-LTC",
+    "ETH/KRW (이더리움)": "KRW-ETH",
+    "TRX/KRW (트론)": "KRW-TRX",
+    "USDT/KRW (테더)": "KRW-USDT",
+    "SOL/KRW (솔라나)": "KRW-SOL"
+}
+
+# 4. 세션 상태 초기화 및 강제 할당
 if "cash" not in st.session_state: st.session_state.cash = 10_000_000
 if "position_type" not in st.session_state: st.session_state.position_type = None
 if "position_size" not in st.session_state: st.session_state.position_size = 0
@@ -123,17 +129,13 @@ if "sl_pct" not in st.session_state: st.session_state.sl_pct = 0.0
 if "trade_logs" not in st.session_state: st.session_state.trade_logs = []
 if "input_margin" not in st.session_state: st.session_state.input_margin = int(st.session_state.cash)
 
-# 4. 사이드바 - 설정
-st.sidebar.markdown("### TERMINAL SETTINGS")
+# 세션 내 모든 코인 Key가 존재하는지 확인 및 초기화
+for tkr in coin_map.values():
+    if tkr not in st.session_state.ohlc_dict:
+        st.session_state.ohlc_dict[tkr] = []
 
-coin_map = {
-    "BTC/KRW (비트코인)": "KRW-BTC",
-    "LTC/BTC (라이트코인)": "BTC-LTC",
-    "ETH/KRW (이더리움)": "KRW-ETH",
-    "TRX/KRW (트론)": "KRW-TRX",
-    "USDT/KRW (테더)": "KRW-USDT",
-    "SOL/KRW (솔라나)": "KRW-SOL"
-}
+# 5. 사이드바 - 설정
+st.sidebar.markdown("### TERMINAL SETTINGS")
 
 selected_coin_label = st.sidebar.selectbox("Market Ticker", list(coin_map.keys()))
 active_ticker = coin_map[selected_coin_label]
@@ -161,11 +163,11 @@ if col_s2.button("Reset", use_container_width=True):
     st.session_state.position_size = 0
     st.session_state.entry_price = 0
     st.session_state.margin = 0
-    st.session_state.ohlc_dict = {}
+    st.session_state.ohlc_dict = {tkr: [] for tkr in coin_map.values()}
     st.session_state.trade_logs = []
     st.rerun()
 
-# 5. 모든 코인의 시세를 한 번에 수집 및 백그라운드 데이터 일괄 갱신
+# 6. 모든 코인 시세 수집 및 세션 데이터 업데이트
 all_tickers = list(coin_map.values())
 all_market_data = get_upbit_all_details(all_tickers)
 
@@ -175,14 +177,12 @@ if not all_market_data or active_ticker not in all_market_data:
 
 now_str = datetime.now().strftime("%H:%M:%S")
 
+# 전체 코인의 OHLC 데이터를 백그라운드에서 세션에 누적
 for tkr, data in all_market_data.items():
-    if tkr not in st.session_state.ohlc_dict:
-        st.session_state.ohlc_dict[tkr] = []
-        
-    coin_ohlc = st.session_state.ohlc_dict[tkr]
     c_price = data['price']
+    coin_ohlc = st.session_state.ohlc_dict[tkr]
     
-    if not coin_ohlc:
+    if len(coin_ohlc) == 0:
         init_vol = c_price * 0.05
         coin_ohlc.append({
             "time": now_str, "open": c_price, "high": c_price,
@@ -202,10 +202,15 @@ for tkr, data in all_market_data.items():
         if len(coin_ohlc) > 60:
             coin_ohlc.pop(0)
 
-# 현재 선택된 코인 정보 추출
+# 현재 활성화된 코인의 데이터 가져오기
 market_data = all_market_data[active_ticker]
 curr_price = market_data['price']
 df = pd.DataFrame(st.session_state.ohlc_dict[active_ticker])
+
+# 데이터프레임 유효성 체크
+if df.empty:
+    st.warning("차트 데이터를 생성 중입니다...")
+    st.stop()
 
 # 지표 계산
 df["MA5"] = df["close"].rolling(window=5).mean()
@@ -218,7 +223,7 @@ loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
 rs = gain / loss
 df["RSI"] = 100 - (100 / (1 + rs))
 
-# 6. PnL 계산
+# 7. PnL 계산
 pnl = 0
 pnl_pct = 0.0
 if st.session_state.position_type == "LONG":
@@ -232,7 +237,7 @@ elif st.session_state.position_type == "SHORT":
 
 total_asset = st.session_state.cash + st.session_state.margin + pnl
 
-# 7. 상단 헤더
+# 8. 상단 헤더
 change_class = "green-text" if market_data['change_rate'] >= 0 else "red-text"
 unit_suffix = "BTC" if active_ticker.startswith("BTC-") else "KRW"
 
@@ -256,7 +261,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 8. 메인 레이아웃 분할
+# 9. 메인 레이아웃 분할
 col_left, col_right = st.columns([7, 5])
 
 with col_left:
@@ -454,7 +459,7 @@ with col_right:
         for log in st.session_state.trade_logs[:8]:
             st.caption(log)
 
-# 9. 자동 청산 및 루프
+# 10. 자동 청산 및 실시간 루프
 if st.session_state.position_type:
     if pnl_pct <= -100:
         st.error("[LIQUIDATED] 강제 청산되었습니다!")
