@@ -112,15 +112,15 @@ if "position_size" not in st.session_state: st.session_state.position_size = 0
 if "entry_price" not in st.session_state: st.session_state.entry_price = 0
 if "margin" not in st.session_state: st.session_state.margin = 0
 if "leverage" not in st.session_state: st.session_state.leverage = 10
-if "ohlc_data" not in st.session_state: st.session_state.ohlc_data = []
+# 코인별 OHLC 차트 데이터를 분리 저장하는 딕셔너리
+if "ohlc_dict" not in st.session_state: st.session_state.ohlc_dict = {}
 if "running" not in st.session_state: st.session_state.running = True
 if "tp_pct" not in st.session_state: st.session_state.tp_pct = 0.0
 if "sl_pct" not in st.session_state: st.session_state.sl_pct = 0.0
 if "trade_logs" not in st.session_state: st.session_state.trade_logs = []
 if "input_margin" not in st.session_state: st.session_state.input_margin = int(st.session_state.cash)
-if "current_ticker" not in st.session_state: st.session_state.current_ticker = "KRW-BTC"
 
-# 4. 사이드바 - 설정 및 요청 코인 6종 정의
+# 4. 사이드바 - 설정
 st.sidebar.markdown("### TERMINAL SETTINGS")
 
 coin_map = {
@@ -134,11 +134,6 @@ coin_map = {
 
 selected_coin_label = st.sidebar.selectbox("Market Ticker", list(coin_map.keys()))
 ticker = coin_map[selected_coin_label]
-
-# 코인 종류 변경 시 이전 코인 차트 데이터 초기화
-if st.session_state.current_ticker != ticker:
-    st.session_state.current_ticker = ticker
-    st.session_state.ohlc_data = []
 
 st.session_state.leverage = st.sidebar.select_slider(
     "Leverage (레버리지)", options=[1, 2, 5, 10, 20, 50, 75, 100, 125], value=st.session_state.leverage
@@ -163,11 +158,11 @@ if col_s2.button("Reset", use_container_width=True):
     st.session_state.position_size = 0
     st.session_state.entry_price = 0
     st.session_state.margin = 0
-    st.session_state.ohlc_data = []
+    st.session_state.ohlc_dict = {}
     st.session_state.trade_logs = []
     st.rerun()
 
-# 5. 시세 처리 및 차트 데이터 갱신
+# 5. 시세 처리 및 차트 데이터 갱신 (유지 로직)
 market_data = get_upbit_detail(ticker)
 if market_data is None:
     st.error("시세 데이터를 불러오는데 실패했습니다.")
@@ -176,27 +171,33 @@ if market_data is None:
 curr_price = market_data['price']
 now_str = datetime.now().strftime("%H:%M:%S")
 
-if not st.session_state.ohlc_data:
+# 현재 티커에 데이터 리스트가 없으면 초기화 생성
+if ticker not in st.session_state.ohlc_dict:
+    st.session_state.ohlc_dict[ticker] = []
+
+coin_ohlc = st.session_state.ohlc_dict[ticker]
+
+if not coin_ohlc:
     init_vol = curr_price * 0.05
-    st.session_state.ohlc_data.append({
+    coin_ohlc.append({
         "time": now_str, "open": curr_price, "high": curr_price,
         "low": curr_price, "close": curr_price, "vol": init_vol
     })
 else:
-    last_candle = st.session_state.ohlc_data[-1]
+    last_candle = coin_ohlc[-1]
     new_open = last_candle["close"]
     new_high = max(new_open, curr_price)
     new_low = min(new_open, curr_price)
     vol = abs(curr_price - new_open) * 10 + 100000
     
-    st.session_state.ohlc_data.append({
+    coin_ohlc.append({
         "time": now_str, "open": new_open, "high": new_high,
         "low": new_low, "close": curr_price, "vol": vol
     })
-    if len(st.session_state.ohlc_data) > 60:
-        st.session_state.ohlc_data.pop(0)
+    if len(coin_ohlc) > 60:
+        coin_ohlc.pop(0)
 
-df = pd.DataFrame(st.session_state.ohlc_data)
+df = pd.DataFrame(coin_ohlc)
 
 # 지표 계산
 df["MA5"] = df["close"].rolling(window=5).mean()
@@ -268,7 +269,7 @@ with col_left:
     if show_ma60:
         fig.add_trace(go.Scatter(x=df['time'], y=df['MA60'], mode='lines', line=dict(color='#00bfff', width=1.2), name="MA60"), row=1, col=1)
         
-    # 차트 내 진입 평단가 선 표시 (포지션 보유 시)
+    # 차트 내 진입 평단가 선 표시
     if st.session_state.position_type and st.session_state.entry_price > 0:
         line_color = "#0ecb81" if st.session_state.position_type == "LONG" else "#f6465d"
         fig.add_hline(
