@@ -37,9 +37,9 @@ st.markdown("""
         -webkit-text-fill-color: #ffffff !important;
     }
 
-    /* 코인 선택창 (Selectbox) 전체 요소 강력 CSS 덮어쓰기 */
+    /* 코인 선택창 (Selectbox) 전체 요소 CSS 강제 고정 */
     div[data-baseweb="select"], 
-    div[data-baseweb="select"] > div,
+    div[data-baseweb="select"] *,
     div[data-baseweb="popover"],
     div[data-baseweb="popover"] *,
     ul[role="listbox"],
@@ -118,26 +118,27 @@ if "tp_pct" not in st.session_state: st.session_state.tp_pct = 0.0
 if "sl_pct" not in st.session_state: st.session_state.sl_pct = 0.0
 if "trade_logs" not in st.session_state: st.session_state.trade_logs = []
 if "input_margin" not in st.session_state: st.session_state.input_margin = int(st.session_state.cash)
+if "current_ticker" not in st.session_state: st.session_state.current_ticker = "KRW-BTC"
 
-# 4. 사이드바 - 설정
+# 4. 사이드바 - 설정 및 요청 코인 6종 정의
 st.sidebar.markdown("### TERMINAL SETTINGS")
 
 coin_map = {
     "BTC/KRW (비트코인)": "KRW-BTC",
+    "LTC/KRW (라이트코인)": "KRW-LTC",
     "ETH/KRW (이더리움)": "KRW-ETH",
-    "XRP/KRW (리플)": "KRW-XRP",
-    "SOL/KRW (솔라나)": "KRW-SOL",
-    "DOGE/KRW (도지코인)": "KRW-DOGE",
-    "ADA/KRW (에이다)": "KRW-ADA",
-    "AVAX/KRW (아발란체)": "KRW-AVAX",
-    "DOT/KRW (폴카닷)": "KRW-DOT",
-    "MATIC/KRW (폴리곤)": "KRW-MATIC",
-    "LINK/KRW (체인링크)": "KRW-LINK",
-    "BCH/KRW (비트코인캐시)": "KRW-BCH",
-    "SHIB/KRW (시바이누)": "KRW-SHIB"
+    "TRX/KRW (트론)": "KRW-TRX",
+    "USDT/KRW (테더)": "KRW-USDT",
+    "BNB/KRW (바이낸스코인)": "KRW-BNB"
 }
+
 selected_coin_label = st.sidebar.selectbox("Market Ticker", list(coin_map.keys()))
 ticker = coin_map[selected_coin_label]
+
+# 코인 종류 변경 시 이전 코인 차트 데이터 초기화
+if st.session_state.current_ticker != ticker:
+    st.session_state.current_ticker = ticker
+    st.session_state.ohlc_data = []
 
 st.session_state.leverage = st.sidebar.select_slider(
     "Leverage (레버리지)", options=[1, 2, 5, 10, 20, 50, 75, 100, 125], value=st.session_state.leverage
@@ -166,7 +167,7 @@ if col_s2.button("Reset", use_container_width=True):
     st.session_state.trade_logs = []
     st.rerun()
 
-# 5. 시세 처리
+# 5. 시세 처리 및 차트 데이터 갱신
 market_data = get_upbit_detail(ticker)
 if market_data is None:
     st.error("시세 데이터를 불러오는데 실패했습니다.")
