@@ -38,7 +38,7 @@ st.markdown("""
         -webkit-text-fill-color: #ffffff !important;
     }
     
-    /* 드롭다운 메뉴 스타일 (시인성 확보) */
+    /* 드롭다운 메뉴 스타일 */
     div[data-baseweb="popover"] div, div[data-baseweb="menu"] {
         background-color: #1e2329 !important;
         color: #ffffff !important;
@@ -281,7 +281,7 @@ with col_left:
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
     st.markdown("##### ORDER PANEL")
     
-    # 비율 선택 버튼 (작동 보장 로직)
+    # 비율 버튼
     b1, b2, b3, b4 = st.columns(4)
     if b1.button("25%"):
         st.session_state.input_margin = int(st.session_state.cash * 0.25)
@@ -298,14 +298,21 @@ with col_left:
 
     o_col1, o_col2 = st.columns(2)
     with o_col1:
-        current_val = min(int(st.session_state.input_margin), int(st.session_state.cash))
-        user_input = st.number_input("증거금 직접 입력 (KRW)", min_value=0, max_value=int(st.session_state.cash), value=current_val, step=100000, format="%d")
-        st.session_state.input_margin = user_input
-        st.caption(f"설정 증거금: {st.session_state.input_margin:,.0f} KRW")
+        # 쉼표(,) 적용 가능한 텍스트 입력창 처리
+        formatted_val = f"{int(st.session_state.input_margin):,}"
+        user_input_str = st.text_input("증거금 직접 입력 (KRW)", value=formatted_val)
+        
+        # 입력받은 텍스트에서 쉼표 및 문자 제거 후 숫자로 파싱
+        try:
+            clean_val = int("".join(filter(str.isdigit, user_input_str)))
+            st.session_state.input_margin = min(clean_val, int(st.session_state.cash))
+        except ValueError:
+            st.session_state.input_margin = 0
+            
     with o_col2:
         coin_qty = (st.session_state.input_margin * st.session_state.leverage) / curr_price if curr_price > 0 else 0
         st.write(" ")
-        st.write(f"주문 수량: {coin_qty:,.4f} 코인")
+        st.write(f"주문 수량: **{coin_qty:,.4f} 코인**")
 
     tp_col, sl_col = st.columns(2)
     with tp_col: 
