@@ -7,25 +7,74 @@ from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# 1. 페이지 설정 및 다크모드 커스텀 CSS
+# 1. 페이지 설정 및 완전 다크모드 커스텀 CSS (입력창/선택창/버튼 전체 검은색화)
 st.set_page_config(page_title="Crypto Futures Terminal", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0b0e11; color: #eaecef; font-family: sans-serif; }
+    /* 전체 배경 */
+    .stApp { background-color: #0b0e11; color: #ffffff !important; font-family: sans-serif; }
     section[data-testid="stSidebar"] { background-color: #181a20; border-right: 1px solid #2b313a; }
+    
+    /* 레이아웃 카드 */
     .header-card { background-color: #181a20; border-radius: 8px; padding: 12px 20px; border: 1px solid #2b313a; margin-bottom: 12px; }
     .trade-box { background-color: #181a20; border: 1px solid #2b313a; border-radius: 8px; padding: 16px; margin-bottom: 10px; }
+    
+    /* 텍스트 컬러 */
     .green-text { color: #0ecb81 !important; }
     .red-text { color: #f6465d !important; }
     .gray-text { color: #848e9c !important; }
     
-    div.stButton > button { border-radius: 4px; font-weight: 600; height: 42px; }
+    /* 입력창(NumberInput), 선택창(Selectbox) 다크 테마 커스텀 */
+    div[data-baseweb="input"], div[data-baseweb="select"] > div {
+        background-color: #1e2329 !important;
+        border: 1px solid #474d57 !important;
+        color: #ffffff !important;
+        border-radius: 4px !important;
+    }
+    input {
+        background-color: #1e2329 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    /* 선택창 드롭다운 메뉴 */
+    ul[data-baseweb="menu"] {
+        background-color: #1e2329 !important;
+        border: 1px solid #474d57 !important;
+    }
+    li[data-baseweb="option"] {
+        background-color: #1e2329 !important;
+        color: #ffffff !important;
+    }
+    li[data-baseweb="option"]:hover {
+        background-color: #2b313a !important;
+    }
+    
+    /* 라벨 및 캡션 텍스트 흰색화 */
+    label, p, span, div {
+        color: #ffffff !important;
+    }
+    .gray-text { color: #848e9c !important; }
+
+    /* 일반 버튼 다크 스타일 */
+    div.stButton > button {
+        background-color: #2b313a !important;
+        color: #ffffff !important;
+        border: 1px solid #474d57 !important;
+        border-radius: 4px;
+        font-weight: 600;
+        height: 42px;
+    }
+    div.stButton > button:hover {
+        background-color: #363c4e !important;
+        border-color: #848e9c !important;
+    }
+
+    /* 롱/숏 전용 커스텀 버튼 */
     .btn-long button { background-color: #0ecb81 !important; color: #ffffff !important; border: none !important; }
     .btn-long button:hover { background-color: #0ba368 !important; }
     .btn-short button { background-color: #f6465d !important; color: #ffffff !important; border: none !important; }
     .btn-short button:hover { background-color: #d6384c !important; }
-    .btn-utility button { background-color: #2b313a !important; color: #eaecef !important; border: 1px solid #474d57 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -54,7 +103,7 @@ if "position_size" not in st.session_state: st.session_state.position_size = 0
 if "entry_price" not in st.session_state: st.session_state.entry_price = 0
 if "margin" not in st.session_state: st.session_state.margin = 0
 if "leverage" not in st.session_state: st.session_state.leverage = 10
-if "ohlc_data" not in st.session_state: st.session_state.ohlc_data = [] # 캔들스틱 데이터 버퍼
+if "ohlc_data" not in st.session_state: st.session_state.ohlc_data = []
 if "running" not in st.session_state: st.session_state.running = True
 if "tp_pct" not in st.session_state: st.session_state.tp_pct = 0.0
 if "sl_pct" not in st.session_state: st.session_state.sl_pct = 0.0
@@ -63,12 +112,20 @@ if "trade_logs" not in st.session_state: st.session_state.trade_logs = []
 # 4. 사이드바 - 설정 & 이동평균선/지표 온오프
 st.sidebar.markdown("### ⚙️ TERMINAL SETTINGS")
 
+# 다양한 코인 종류 추가
 coin_map = {
     "BTC/KRW (비트코인)": "KRW-BTC",
     "ETH/KRW (이더리움)": "KRW-ETH",
     "XRP/KRW (리플)": "KRW-XRP",
     "SOL/KRW (솔라나)": "KRW-SOL",
-    "DOGE/KRW (도지코인)": "KRW-DOGE"
+    "DOGE/KRW (도지코인)": "KRW-DOGE",
+    "ADA/KRW (에이다)": "KRW-ADA",
+    "AVAX/KRW (아발란체)": "KRW-AVAX",
+    "DOT/KRW (폴카닷)": "KRW-DOT",
+    "MATIC/KRW (폴리곤)": "KRW-MATIC",
+    "LINK/KRW (체인링크)": "KRW-LINK",
+    "BCH/KRW (비트코인캐시)": "KRW-BCH",
+    "SHIB/KRW (시바이누)": "KRW-SHIB"
 }
 selected_coin_label = st.sidebar.selectbox("Market Ticker", list(coin_map.keys()))
 ticker = coin_map[selected_coin_label]
@@ -99,7 +156,7 @@ if col_s2.button("🧹 Reset", use_container_width=True):
     st.session_state.trade_logs = []
     st.rerun()
 
-# 5. 시세 처리 & 1초 캔들스틱 데이터 파싱
+# 5. 시세 처리 & 캔들스틱 데이터 생성
 market_data = get_upbit_detail(ticker)
 if market_data is None:
     st.error("⚠️ 시세 데이터를 불러오는데 실패했습니다.")
@@ -108,7 +165,6 @@ if market_data is None:
 curr_price = market_data['price']
 now_str = datetime.now().strftime("%H:%M:%S")
 
-# 1초 단위 캔들 갱신 로직 (문법 에러 수정 완료)
 if not st.session_state.ohlc_data:
     init_vol = curr_price * 0.05
     st.session_state.ohlc_data.append({
@@ -131,12 +187,11 @@ else:
 
 df = pd.DataFrame(st.session_state.ohlc_data)
 
-# 이동평균선 계산
+# 지표 계산
 df["MA5"] = df["close"].rolling(window=5).mean()
 df["MA20"] = df["close"].rolling(window=20).mean()
 df["MA60"] = df["close"].rolling(window=60).mean()
 
-# 간단 RSI 계산
 delta = df["close"].diff()
 gain = (delta.where(delta > 0, 0)).rolling(14).mean()
 loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -163,13 +218,13 @@ st.markdown(f"""
 <div class="header-card">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-            <span style="font-size: 20px; font-weight: bold;">{selected_coin_label.split()[0]} PERPETUAL</span>
+            <span style="font-size: 20px; font-weight: bold; color: #ffffff;">{selected_coin_label.split()[0]} PERPETUAL</span>
             <span style="background-color: #2b313a; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 8px; color: #f0b90b;">{st.session_state.leverage}x</span>
         </div>
         <div>
-            <span class="gray-text">24h High:</span> <span style="margin-right: 12px;">{market_data['high']:,.0f}</span>
-            <span class="gray-text">24h Low:</span> <span style="margin-right: 12px;">{market_data['low']:,.0f}</span>
-            <span class="gray-text">24h Vol:</span> <span>{market_data['volume']/1e8:,.1f} 억</span>
+            <span class="gray-text">24h High:</span> <span style="margin-right: 12px; color: #ffffff;">{market_data['high']:,.0f}</span>
+            <span class="gray-text">24h Low:</span> <span style="margin-right: 12px; color: #ffffff;">{market_data['low']:,.0f}</span>
+            <span class="gray-text">24h Vol:</span> <span style="color: #ffffff;">{market_data['volume']/1e8:,.1f} 억</span>
         </div>
     </div>
     <div style="display: flex; gap: 20px; margin-top: 6px; align-items: baseline;">
@@ -188,13 +243,13 @@ with col_left:
     
     fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
     
-    # 1) 캔들스틱
+    # 캔들스틱
     fig.add_trace(go.Candlestick(
         x=df['time'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
         increasing_line_color='#0ecb81', decreasing_line_color='#f6465d', name="OHLC"
     ), row=1, col=1)
     
-    # 이동평균선 토글
+    # 이동평균선
     if show_ma5:
         fig.add_trace(go.Scatter(x=df['time'], y=df['MA5'], mode='lines', line=dict(color='#f0b90b', width=1.2), name="MA5"), row=1, col=1)
     if show_ma20:
@@ -202,11 +257,11 @@ with col_left:
     if show_ma60:
         fig.add_trace(go.Scatter(x=df['time'], y=df['MA60'], mode='lines', line=dict(color='#00bfff', width=1.2), name="MA60"), row=1, col=1)
         
-    # 2) 거래량 (Volume)
+    # 거래량
     colors = ['#0ecb81' if c >= o else '#f6465d' for c, o in zip(df['close'], df['open'])]
     fig.add_trace(go.Bar(x=df['time'], y=df['vol'], marker_color=colors, name="Volume"), row=2, col=1)
     
-    # 3) RSI
+    # RSI
     if show_rsi:
         fig.add_trace(go.Scatter(x=df['time'], y=df['RSI'], line=dict(color='#f0b90b', width=1), name="RSI(14)"), row=3, col=1)
         fig.add_hline(y=70, line_dash="dash", line_color="#f6465d", row=3, col=1)
@@ -320,16 +375,16 @@ with col_right:
         st.info("보유 중인 포지션이 없습니다.")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 호가창 잔량 표시 (가상)
+    # 호가창
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
     st.markdown("##### 📖 REAL-TIME ORDERBOOK (호가창)")
     for i in range(3, 0, -1):
-        ask_p = curr_price + (i * 1000)
+        ask_p = curr_price + (i * (curr_price * 0.001))
         ask_vol = int(ask_p * 0.002)
         st.caption(f"🔴 매도호가 {ask_p:,.0f} KRW | 잔량: {ask_vol:,} Qty")
     st.markdown(f"**🟢 현재가 {curr_price:,.0f} KRW**")
     for i in range(1, 4):
-        bid_p = curr_price - (i * 1000)
+        bid_p = curr_price - (i * (curr_price * 0.001))
         bid_vol = int(bid_p * 0.0025)
         st.caption(f"🟢 매수호가 {bid_p:,.0f} KRW | 잔량: {bid_vol:,} Qty")
     st.markdown('</div>', unsafe_allow_html=True)
