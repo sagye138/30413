@@ -53,7 +53,7 @@ st.markdown("""
 coin_map = {
     "BTC/KRW (비트코인)": "KRW-BTC",
     "ETH/KRW (이더리움)": "KRW-ETH",
-    "LTC/KRW (라이트코인 - 상장폐지)": "DELISTED-LTC",
+    "LTC/KRW (라이트코인)": "DELISTED-LTC",
     "BNB/KRW (바이낸스코인)": "KRW-BNB",
     "TRX/KRW (트론)": "KRW-TRX",
     "USDT/KRW (테더)": "KRW-USDT"
