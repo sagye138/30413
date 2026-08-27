@@ -7,75 +7,33 @@ from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# 1. 페이지 설정 및 다크모드 커스텀 CSS
+# 1. 페이지 설정
 st.set_page_config(page_title="Crypto Futures Terminal", layout="wide", initial_sidebar_state="expanded")
 
+# 다크모드 커스텀 CSS
 st.markdown("""
 <style>
-    /* 전체 배경 */
     .stApp { background-color: #0b0e11; color: #ffffff !important; font-family: sans-serif; }
     section[data-testid="stSidebar"] { background-color: #181a20; border-right: 1px solid #2b313a; }
-    
-    /* 레이아웃 카드 */
     .header-card { background-color: #181a20; border-radius: 8px; padding: 12px 20px; border: 1px solid #2b313a; margin-bottom: 12px; }
     .trade-box { background-color: #181a20; border: 1px solid #2b313a; border-radius: 8px; padding: 16px; margin-bottom: 10px; }
-    
-    /* 텍스트 컬러 */
     .green-text { color: #0ecb81 !important; }
     .red-text { color: #f6465d !important; }
     .gray-text { color: #848e9c !important; }
     
-    /* 입력창 기본 스타일 */
-    div[data-baseweb="input"] {
-        background-color: #1e2329 !important;
-        border: 1px solid #474d57 !important;
-        border-radius: 4px !important;
-    }
-    input {
-        background-color: #1e2329 !important;
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
-    }
+    div[data-baseweb="input"] { background-color: #1e2329 !important; border: 1px solid #474d57 !important; border-radius: 4px !important; }
+    input { background-color: #1e2329 !important; color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; }
 
-    /* Selectbox 커스텀 */
-    div[data-baseweb="select"], 
-    div[data-baseweb="select"] *,
-    div[data-baseweb="popover"],
-    div[data-baseweb="popover"] *,
-    ul[role="listbox"],
-    ul[role="listbox"] li,
-    div[role="option"] {
-        background-color: #1e2329 !important;
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+    div[data-baseweb="select"], div[data-baseweb="select"] *, div[data-baseweb="popover"], div[data-baseweb="popover"] *, ul[role="listbox"], ul[role="listbox"] li, div[role="option"] {
+        background-color: #1e2329 !important; color: #ffffff !important; -webkit-text-fill-color: #ffffff !important;
     }
-    
-    ul[role="listbox"] li:hover,
-    div[role="option"]:hover,
-    li[aria-selected="true"] {
-        background-color: #2b313a !important;
-        color: #0ecb81 !important;
-        -webkit-text-fill-color: #0ecb81 !important;
+    ul[role="listbox"] li:hover, div[role="option"]:hover, li[aria-selected="true"] {
+        background-color: #2b313a !important; color: #0ecb81 !important; -webkit-text-fill-color: #0ecb81 !important;
     }
-    
     label, p, span, div { color: #ffffff !important; }
-    .gray-text { color: #848e9c !important; }
 
-    /* 버튼 스타일 */
-    div.stButton > button {
-        background-color: #2b313a !important;
-        color: #ffffff !important;
-        border: 1px solid #474d57 !important;
-        border-radius: 4px;
-        font-weight: 600;
-        height: 42px;
-    }
-    div.stButton > button:hover {
-        background-color: #363c4e !important;
-        border-color: #848e9c !important;
-    }
-
-    /* 롱/숏 전용 버튼 */
+    div.stButton > button { background-color: #2b313a !important; color: #ffffff !important; border: 1px solid #474d57 !important; border-radius: 4px; font-weight: 600; height: 42px; }
+    div.stButton > button:hover { background-color: #363c4e !important; border-color: #848e9c !important; }
     .btn-long button { background-color: #0ecb81 !important; color: #ffffff !important; border: none !important; }
     .btn-long button:hover { background-color: #0ba368 !important; }
     .btn-short button { background-color: #f6465d !important; color: #ffffff !important; border: none !important; }
@@ -83,13 +41,47 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 2. 업비트 API 다중 시세 정보 수집 함수
+# 2. 마켓 매핑 설정
+coin_map = {
+    "BTC/KRW (비트코인)": "KRW-BTC",
+    "LTC/BTC (라이트코인)": "BTC-LTC",
+    "ETH/KRW (이더리움)": "KRW-ETH",
+    "TRX/KRW (트론)": "KRW-TRX",
+    "USDT/KRW (테더)": "KRW-USDT",
+    "SOL/KRW (솔라나)": "KRW-SOL"
+}
+
+# 3. 세션 완전 보존 초기화 (기존 세션 데이터 절대 유실되지 않도록 감싸기)
+def init_session():
+    if "cash" not in st.session_state: st.session_state["cash"] = 10_000_000
+    if "position_type" not in st.session_state: st.session_state["position_type"] = None
+    if "position_size" not in st.session_state: st.session_state["position_size"] = 0
+    if "entry_price" not in st.session_state: st.session_state["entry_price"] = 0
+    if "margin" not in st.session_state: st.session_state["margin"] = 0
+    if "leverage" not in st.session_state: st.session_state["leverage"] = 10
+    if "running" not in st.session_state: st.session_state["running"] = True
+    if "tp_pct" not in st.session_state: st.session_state["tp_pct"] = 0.0
+    if "sl_pct" not in st.session_state: st.session_state["sl_pct"] = 0.0
+    if "trade_logs" not in st.session_state: st.session_state["trade_logs"] = []
+    if "input_margin" not in st.session_state: st.session_state["input_margin"] = int(st.session_state["cash"])
+    
+    # ohlc_dict 안전 초기화
+    if "ohlc_dict" not in st.session_state or not isinstance(st.session_state["ohlc_dict"], dict):
+        st.session_state["ohlc_dict"] = {}
+        
+    for tkr in coin_map.values():
+        if tkr not in st.session_state["ohlc_dict"]:
+            st.session_state["ohlc_dict"][tkr] = []
+
+init_session()
+
+# 4. API 시세 수집 함수 (안전 예외처리)
 def get_upbit_all_details(tickers):
     try:
         ticker_str = ",".join(tickers)
         url = f"https://api.upbit.com/v1/ticker?markets={ticker_str}"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=3) as response:
             data_list = json.loads(response.read().decode())
             results = {}
             for data in data_list:
@@ -105,38 +97,8 @@ def get_upbit_all_details(tickers):
     except Exception:
         return {}
 
-# 3. 마켓 티커 설정
-coin_map = {
-    "BTC/KRW (비트코인)": "KRW-BTC",
-    "LTC/BTC (라이트코인)": "BTC-LTC",
-    "ETH/KRW (이더리움)": "KRW-ETH",
-    "TRX/KRW (트론)": "KRW-TRX",
-    "USDT/KRW (테더)": "KRW-USDT",
-    "SOL/KRW (솔라나)": "KRW-SOL"
-}
-
-# 4. 세션 상태 초기화 및 강제 할당
-if "cash" not in st.session_state: st.session_state.cash = 10_000_000
-if "position_type" not in st.session_state: st.session_state.position_type = None
-if "position_size" not in st.session_state: st.session_state.position_size = 0
-if "entry_price" not in st.session_state: st.session_state.entry_price = 0
-if "margin" not in st.session_state: st.session_state.margin = 0
-if "leverage" not in st.session_state: st.session_state.leverage = 10
-if "ohlc_dict" not in st.session_state: st.session_state.ohlc_dict = {}
-if "running" not in st.session_state: st.session_state.running = True
-if "tp_pct" not in st.session_state: st.session_state.tp_pct = 0.0
-if "sl_pct" not in st.session_state: st.session_state.sl_pct = 0.0
-if "trade_logs" not in st.session_state: st.session_state.trade_logs = []
-if "input_margin" not in st.session_state: st.session_state.input_margin = int(st.session_state.cash)
-
-# 세션 내 모든 코인 Key가 존재하는지 확인 및 초기화
-for tkr in coin_map.values():
-    if tkr not in st.session_state.ohlc_dict:
-        st.session_state.ohlc_dict[tkr] = []
-
 # 5. 사이드바 - 설정
 st.sidebar.markdown("### TERMINAL SETTINGS")
-
 selected_coin_label = st.sidebar.selectbox("Market Ticker", list(coin_map.keys()))
 active_ticker = coin_map[selected_coin_label]
 
@@ -167,50 +129,52 @@ if col_s2.button("Reset", use_container_width=True):
     st.session_state.trade_logs = []
     st.rerun()
 
-# 6. 모든 코인 시세 수집 및 세션 데이터 업데이트
+# 6. 시세 데이터 가져오기 및 세션 축적
 all_tickers = list(coin_map.values())
 all_market_data = get_upbit_all_details(all_tickers)
 
-if not all_market_data or active_ticker not in all_market_data:
-    st.error("시세 데이터를 불러오는데 실패했습니다.")
-    st.stop()
-
 now_str = datetime.now().strftime("%H:%M:%S")
 
-# 전체 코인의 OHLC 데이터를 백그라운드에서 세션에 누적
-for tkr, data in all_market_data.items():
-    c_price = data['price']
-    coin_ohlc = st.session_state.ohlc_dict[tkr]
-    
-    if len(coin_ohlc) == 0:
-        init_vol = c_price * 0.05
-        coin_ohlc.append({
-            "time": now_str, "open": c_price, "high": c_price,
-            "low": c_price, "close": c_price, "vol": init_vol
-        })
-    else:
-        last_candle = coin_ohlc[-1]
-        new_open = last_candle["close"]
-        new_high = max(new_open, c_price)
-        new_low = min(new_open, c_price)
-        vol = abs(c_price - new_open) * 10 + 100000
-        
-        coin_ohlc.append({
-            "time": now_str, "open": new_open, "high": new_high,
-            "low": new_low, "close": c_price, "vol": vol
-        })
-        if len(coin_ohlc) > 60:
-            coin_ohlc.pop(0)
+# 데이터 수집 성공 시 전체 코인 업데이트 진행
+if all_market_data:
+    for tkr in all_tickers:
+        if tkr in all_market_data:
+            c_price = all_market_data[tkr]['price']
+            coin_ohlc = st.session_state.ohlc_dict[tkr]
+            
+            if not coin_ohlc:
+                init_vol = c_price * 0.05
+                coin_ohlc.append({
+                    "time": now_str, "open": c_price, "high": c_price,
+                    "low": c_price, "close": c_price, "vol": init_vol
+                })
+            else:
+                last_candle = coin_ohlc[-1]
+                new_open = last_candle["close"]
+                new_high = max(new_open, c_price)
+                new_low = min(new_open, c_price)
+                vol = abs(c_price - new_open) * 10 + 100000
+                
+                coin_ohlc.append({
+                    "time": now_str, "open": new_open, "high": new_high,
+                    "low": new_low, "close": c_price, "vol": vol
+                })
+                if len(coin_ohlc) > 60:
+                    coin_ohlc.pop(0)
 
-# 현재 활성화된 코인의 데이터 가져오기
+# 선택된 코인 데이터 및 데이터프레임 추출
+active_ohlc = st.session_state.ohlc_dict.get(active_ticker, [])
+
+# 데이터 누적이 진행 중일 때 안내 화면
+if not active_ohlc or active_ticker not in all_market_data:
+    st.warning("실시간 세션 데이터를 수집 중입니다... 잠시만 기다려주세요.")
+    time.sleep(1)
+    st.rerun()
+
 market_data = all_market_data[active_ticker]
 curr_price = market_data['price']
-df = pd.DataFrame(st.session_state.ohlc_dict[active_ticker])
 
-# 데이터프레임 유효성 체크
-if df.empty:
-    st.warning("차트 데이터를 생성 중입니다...")
-    st.stop()
+df = pd.DataFrame(active_ohlc)
 
 # 지표 계산
 df["MA5"] = df["close"].rolling(window=5).mean()
@@ -270,13 +234,11 @@ with col_left:
     
     fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
     
-    # 캔들스틱
     fig.add_trace(go.Candlestick(
         x=df['time'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
         increasing_line_color='#0ecb81', decreasing_line_color='#f6465d', name="OHLC"
     ), row=1, col=1)
     
-    # 이동평균선
     if show_ma5:
         fig.add_trace(go.Scatter(x=df['time'], y=df['MA5'], mode='lines', line=dict(color='#f0b90b', width=1.2), name="MA5"), row=1, col=1)
     if show_ma20:
@@ -284,7 +246,6 @@ with col_left:
     if show_ma60:
         fig.add_trace(go.Scatter(x=df['time'], y=df['MA60'], mode='lines', line=dict(color='#00bfff', width=1.2), name="MA60"), row=1, col=1)
         
-    # 차트 내 진입 평단가 선 표시
     if st.session_state.position_type and st.session_state.entry_price > 0:
         line_color = "#0ecb81" if st.session_state.position_type == "LONG" else "#f6465d"
         fig.add_hline(
@@ -298,11 +259,9 @@ with col_left:
             row=1, col=1
         )
 
-    # 거래량
     colors = ['#0ecb81' if c >= o else '#f6465d' for c, o in zip(df['close'], df['open'])]
     fig.add_trace(go.Bar(x=df['time'], y=df['vol'], marker_color=colors, name="Volume"), row=2, col=1)
     
-    # RSI
     if show_rsi:
         fig.add_trace(go.Scatter(x=df['time'], y=df['RSI'], line=dict(color='#f0b90b', width=1), name="RSI(14)"), row=3, col=1)
         fig.add_hline(y=70, line_dash="dash", line_color="#f6465d", row=3, col=1)
@@ -315,11 +274,10 @@ with col_left:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- 주문 패널 ---
+    # 주문 패널
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
     st.markdown("##### ORDER PANEL")
     
-    # 비율 버튼
     b1, b2, b3, b4 = st.columns(4)
     if b1.button("25%"):
         st.session_state.input_margin = int(st.session_state.cash * 0.25)
