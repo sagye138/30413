@@ -7,7 +7,7 @@ from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# 1. 페이지 설정 및 완전 다크모드 커스텀 CSS (입력창/선택창/버튼 전체 검은색화)
+# 1. 페이지 설정 및 다크모드 커스텀 CSS
 st.set_page_config(page_title="Crypto Futures Terminal", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -25,7 +25,7 @@ st.markdown("""
     .red-text { color: #f6465d !important; }
     .gray-text { color: #848e9c !important; }
     
-    /* 입력창(NumberInput), 선택창(Selectbox) 다크 테마 커스텀 */
+    /* 입력창 및 선택창 기본 스타일 */
     div[data-baseweb="input"], div[data-baseweb="select"] > div {
         background-color: #1e2329 !important;
         border: 1px solid #474d57 !important;
@@ -37,26 +37,28 @@ st.markdown("""
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
     }
-    /* 선택창 드롭다운 메뉴 */
-    ul[data-baseweb="menu"] {
-        background-color: #1e2329 !important;
-        border: 1px solid #474d57 !important;
-    }
-    li[data-baseweb="option"] {
+    
+    /* 드롭다운 메뉴 스타일 (시인성 확보) */
+    div[data-baseweb="popover"] div, div[data-baseweb="menu"] {
         background-color: #1e2329 !important;
         color: #ffffff !important;
     }
-    li[data-baseweb="option"]:hover {
+    li[role="option"] {
+        background-color: #1e2329 !important;
+        color: #ffffff !important;
+    }
+    li[role="option"]:hover, li[role="option"][aria-selected="true"] {
         background-color: #2b313a !important;
+        color: #0ecb81 !important;
     }
     
-    /* 라벨 및 캡션 텍스트 흰색화 */
+    /* 라벨 및 텍스트 흰색 설정 */
     label, p, span, div {
         color: #ffffff !important;
     }
     .gray-text { color: #848e9c !important; }
 
-    /* 일반 버튼 다크 스타일 */
+    /* 버튼 스타일 */
     div.stButton > button {
         background-color: #2b313a !important;
         color: #ffffff !important;
@@ -70,7 +72,7 @@ st.markdown("""
         border-color: #848e9c !important;
     }
 
-    /* 롱/숏 전용 커스텀 버튼 */
+    /* 롱/숏 전용 버튼 */
     .btn-long button { background-color: #0ecb81 !important; color: #ffffff !important; border: none !important; }
     .btn-long button:hover { background-color: #0ba368 !important; }
     .btn-short button { background-color: #f6465d !important; color: #ffffff !important; border: none !important; }
@@ -108,11 +110,11 @@ if "running" not in st.session_state: st.session_state.running = True
 if "tp_pct" not in st.session_state: st.session_state.tp_pct = 0.0
 if "sl_pct" not in st.session_state: st.session_state.sl_pct = 0.0
 if "trade_logs" not in st.session_state: st.session_state.trade_logs = []
+if "input_margin" not in st.session_state: st.session_state.input_margin = int(st.session_state.cash)
 
-# 4. 사이드바 - 설정 & 이동평균선/지표 온오프
-st.sidebar.markdown("### ⚙️ TERMINAL SETTINGS")
+# 4. 사이드바 - 설정
+st.sidebar.markdown("### TERMINAL SETTINGS")
 
-# 다양한 코인 종류 추가
 coin_map = {
     "BTC/KRW (비트코인)": "KRW-BTC",
     "ETH/KRW (이더리움)": "KRW-ETH",
@@ -135,7 +137,7 @@ st.session_state.leverage = st.sidebar.select_slider(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 📊 CHART INDICATORS")
+st.sidebar.markdown("### CHART INDICATORS")
 show_ma5 = st.sidebar.checkbox("이동평균선 MA 5", value=True)
 show_ma20 = st.sidebar.checkbox("이동평균선 MA 20", value=True)
 show_ma60 = st.sidebar.checkbox("이동평균선 MA 60", value=False)
@@ -143,11 +145,12 @@ show_rsi = st.sidebar.checkbox("RSI 보조지표 (14)", value=True)
 
 st.sidebar.markdown("---")
 col_s1, col_s2 = st.sidebar.columns(2)
-if col_s1.button("⏯ Stream", use_container_width=True):
+if col_s1.button("Stream On/Off", use_container_width=True):
     st.session_state.running = not st.session_state.running
 
-if col_s2.button("🧹 Reset", use_container_width=True):
+if col_s2.button("Reset", use_container_width=True):
     st.session_state.cash = 10_000_000
+    st.session_state.input_margin = 10_000_000
     st.session_state.position_type = None
     st.session_state.position_size = 0
     st.session_state.entry_price = 0
@@ -156,10 +159,10 @@ if col_s2.button("🧹 Reset", use_container_width=True):
     st.session_state.trade_logs = []
     st.rerun()
 
-# 5. 시세 처리 & 캔들스틱 데이터 생성
+# 5. 시세 처리
 market_data = get_upbit_detail(ticker)
 if market_data is None:
-    st.error("⚠️ 시세 데이터를 불러오는데 실패했습니다.")
+    st.error("시세 데이터를 불러오는데 실패했습니다.")
     st.stop()
 
 curr_price = market_data['price']
@@ -198,7 +201,7 @@ loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
 rs = gain / loss
 df["RSI"] = 100 - (100 / (1 + rs))
 
-# 6. PnL 및 계좌 계산
+# 6. PnL 계산
 pnl = 0
 pnl_pct = 0.0
 if st.session_state.position_type == "LONG":
@@ -276,34 +279,48 @@ with col_left:
 
     # --- 주문 패널 ---
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
-    st.markdown("##### ⚡ ORDER PANEL")
+    st.markdown("##### ORDER PANEL")
     
+    # 비율 선택 버튼 (작동 보장 로직)
+    b1, b2, b3, b4 = st.columns(4)
+    if b1.button("25%"):
+        st.session_state.input_margin = int(st.session_state.cash * 0.25)
+        st.rerun()
+    if b2.button("50%"):
+        st.session_state.input_margin = int(st.session_state.cash * 0.50)
+        st.rerun()
+    if b3.button("75%"):
+        st.session_state.input_margin = int(st.session_state.cash * 0.75)
+        st.rerun()
+    if b4.button("100% Max"):
+        st.session_state.input_margin = int(st.session_state.cash)
+        st.rerun()
+
     o_col1, o_col2 = st.columns(2)
     with o_col1:
-        custom_margin = st.number_input("증거금 직접 입력 (KRW)", min_value=0, max_value=int(st.session_state.cash), value=int(st.session_state.cash), step=100000)
+        current_val = min(int(st.session_state.input_margin), int(st.session_state.cash))
+        user_input = st.number_input("증거금 직접 입력 (KRW)", min_value=0, max_value=int(st.session_state.cash), value=current_val, step=100000, format="%d")
+        st.session_state.input_margin = user_input
+        st.caption(f"설정 증거금: {st.session_state.input_margin:,.0f} KRW")
     with o_col2:
-        coin_qty = (custom_margin * st.session_state.leverage) / curr_price if curr_price > 0 else 0
+        coin_qty = (st.session_state.input_margin * st.session_state.leverage) / curr_price if curr_price > 0 else 0
         st.write(" ")
-        st.write(f"📊 주문 수량: **{coin_qty:.4f} 코인**")
-
-    b1, b2, b3, b4 = st.columns(4)
-    if b1.button("25%"): custom_margin = st.session_state.cash * 0.25
-    if b2.button("50%"): custom_margin = st.session_state.cash * 0.50
-    if b3.button("75%"): custom_margin = st.session_state.cash * 0.75
-    if b4.button("100% Max"): custom_margin = st.session_state.cash
+        st.write(f"주문 수량: {coin_qty:,.4f} 코인")
 
     tp_col, sl_col = st.columns(2)
-    with tp_col: st.session_state.tp_pct = st.number_input("목표 익절 (TP %)", value=st.session_state.tp_pct, step=5.0)
-    with sl_col: st.session_state.sl_pct = st.number_input("최대 손절 (SL %)", value=st.session_state.sl_pct, step=5.0)
+    with tp_col: 
+        st.session_state.tp_pct = st.number_input("목표 익절 (TP %)", value=float(st.session_state.tp_pct), step=5.0, format="%.1f")
+    with sl_col: 
+        st.session_state.sl_pct = st.number_input("최대 손절 (SL %)", value=float(st.session_state.sl_pct), step=5.0, format="%.1f")
 
     btn1, btn2 = st.columns(2)
     with btn1:
         st.markdown('<div class="btn-long">', unsafe_allow_html=True)
-        if st.button("🟢 OPEN LONG (롱 진입)", use_container_width=True, disabled=st.session_state.position_type is not None):
-            if custom_margin > 0:
-                st.session_state.margin = custom_margin
-                st.session_state.cash -= custom_margin
-                st.session_state.position_size = custom_margin * st.session_state.leverage
+        if st.button("OPEN LONG (롱 진입)", use_container_width=True, disabled=st.session_state.position_type is not None):
+            if st.session_state.input_margin > 0:
+                st.session_state.margin = st.session_state.input_margin
+                st.session_state.cash -= st.session_state.input_margin
+                st.session_state.position_size = st.session_state.input_margin * st.session_state.leverage
                 st.session_state.entry_price = curr_price
                 st.session_state.position_type = "LONG"
                 st.session_state.trade_logs.insert(0, f"[{now_str}] OPEN LONG @ {curr_price:,.0f} KRW")
@@ -312,11 +329,11 @@ with col_left:
 
     with btn2:
         st.markdown('<div class="btn-short">', unsafe_allow_html=True)
-        if st.button("🔴 OPEN SHORT (숏 진입)", use_container_width=True, disabled=st.session_state.position_type is not None):
-            if custom_margin > 0:
-                st.session_state.margin = custom_margin
-                st.session_state.cash -= custom_margin
-                st.session_state.position_size = custom_margin * st.session_state.leverage
+        if st.button("OPEN SHORT (숏 진입)", use_container_width=True, disabled=st.session_state.position_type is not None):
+            if st.session_state.input_margin > 0:
+                st.session_state.margin = st.session_state.input_margin
+                st.session_state.cash -= st.session_state.input_margin
+                st.session_state.position_size = st.session_state.input_margin * st.session_state.leverage
                 st.session_state.entry_price = curr_price
                 st.session_state.position_type = "SHORT"
                 st.session_state.trade_logs.insert(0, f"[{now_str}] OPEN SHORT @ {curr_price:,.0f} KRW")
@@ -325,14 +342,14 @@ with col_left:
 
     m1, m2, m3 = st.columns(3)
     with m1:
-        if st.button("✂️ 50% 반익/반손", use_container_width=True, disabled=st.session_state.position_type is None):
+        if st.button("50% 반익/반손", use_container_width=True, disabled=st.session_state.position_type is None):
             st.session_state.cash += (st.session_state.margin / 2) + (pnl / 2)
             st.session_state.margin /= 2
             st.session_state.position_size /= 2
             st.session_state.trade_logs.insert(0, f"[{now_str}] PARTIAL CLOSE 50%")
             st.rerun()
     with m2:
-        if st.button("⚡ 전량 청산", use_container_width=True, disabled=st.session_state.position_type is None):
+        if st.button("전량 청산", use_container_width=True, disabled=st.session_state.position_type is None):
             st.session_state.cash += st.session_state.margin + pnl
             st.session_state.trade_logs.insert(0, f"[{now_str}] CLOSE POSITION | PnL: {int(pnl):+} KRW")
             st.session_state.position_type = None
@@ -340,7 +357,7 @@ with col_left:
             st.session_state.entry_price = 0
             st.rerun()
     with m3:
-        if st.button("🔄 스위칭 (REVERSE)", use_container_width=True, disabled=st.session_state.position_type is None):
+        if st.button("스위칭 (REVERSE)", use_container_width=True, disabled=st.session_state.position_type is None):
             st.session_state.cash += st.session_state.margin + pnl
             new_type = "SHORT" if st.session_state.position_type == "LONG" else "LONG"
             new_m = min(st.session_state.margin, st.session_state.cash)
@@ -355,7 +372,7 @@ with col_left:
 
 with col_right:
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
-    st.markdown("##### 💼 ACCOUNT & POSITION SUMMARY")
+    st.markdown("##### ACCOUNT & POSITION SUMMARY")
     st.markdown(f"**Total Wallet Balance:** `{int(total_asset):,} KRW`")
     st.markdown(f"**Available Balance:** `{int(st.session_state.cash):,} KRW`")
     st.markdown(f"**Margin In Use:** `{int(st.session_state.margin):,} KRW`")
@@ -377,37 +394,37 @@ with col_right:
 
     # 호가창
     st.markdown('<div class="trade-box">', unsafe_allow_html=True)
-    st.markdown("##### 📖 REAL-TIME ORDERBOOK (호가창)")
+    st.markdown("##### REAL-TIME ORDERBOOK (호가창)")
     for i in range(3, 0, -1):
         ask_p = curr_price + (i * (curr_price * 0.001))
         ask_vol = int(ask_p * 0.002)
-        st.caption(f"🔴 매도호가 {ask_p:,.0f} KRW | 잔량: {ask_vol:,} Qty")
-    st.markdown(f"**🟢 현재가 {curr_price:,.0f} KRW**")
+        st.caption(f"매도호가 {ask_p:,.0f} KRW | 잔량: {ask_vol:,} Qty")
+    st.markdown(f"**현재가 {curr_price:,.0f} KRW**")
     for i in range(1, 4):
         bid_p = curr_price - (i * (curr_price * 0.001))
         bid_vol = int(bid_p * 0.0025)
-        st.caption(f"🟢 매수호가 {bid_p:,.0f} KRW | 잔량: {bid_vol:,} Qty")
+        st.caption(f"매수호가 {bid_p:,.0f} KRW | 잔량: {bid_vol:,} Qty")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    with st.expander("📜 Execution Logs", expanded=True):
+    with st.expander("Execution Logs", expanded=True):
         for log in st.session_state.trade_logs[:8]:
             st.caption(log)
 
 # 9. 자동 청산 및 루프
 if st.session_state.position_type:
     if pnl_pct <= -100:
-        st.error("💥 [LIQUIDATED] 강제 청산되었습니다!")
+        st.error("[LIQUIDATED] 강제 청산되었습니다!")
         st.session_state.position_type = None
         st.session_state.margin = 0
         st.rerun()
     elif st.session_state.tp_pct > 0 and pnl_pct >= st.session_state.tp_pct:
-        st.success("🎯 [AUTO TP] 목표 익절 달성!")
+        st.success("[AUTO TP] 목표 익절 달성!")
         st.session_state.cash += st.session_state.margin + pnl
         st.session_state.position_type = None
         st.session_state.margin = 0
         st.rerun()
     elif st.session_state.sl_pct > 0 and pnl_pct <= -st.session_state.sl_pct:
-        st.warning("🛑 [AUTO SL] 손절 한도 도달!")
+        st.warning("[AUTO SL] 손절 한도 도달!")
         st.session_state.cash += st.session_state.margin + pnl
         st.session_state.position_type = None
         st.session_state.margin = 0
