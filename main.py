@@ -87,23 +87,27 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 2. 업비트 API 정보 수집
-def get_upbit_detail(ticker="KRW-BTC"):
+# 2. 업비트 API 다중 시세 정보 수집 함수
+def get_upbit_all_details(tickers):
     try:
-        url = f"https://api.upbit.com/v1/ticker?markets={ticker}"
+        ticker_str = ",".join(tickers)
+        url = f"https://api.upbit.com/v1/ticker?markets={ticker_str}"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode())[0]
-            return {
-                "price": float(data['trade_price']),
-                "high": float(data['high_price']),
-                "low": float(data['low_price']),
-                "change_rate": float(data['signed_change_rate']) * 100,
-                "volume": float(data['acc_trade_price_24h']),
-                "trade_volume": float(data['acc_trade_volume_24h'])
-            }
+            data_list = json.loads(response.read().decode())
+            results = {}
+            for data in data_list:
+                results[data['market']] = {
+                    "price": float(data['trade_price']),
+                    "high": float(data['high_price']),
+                    "low": float(data['low_price']),
+                    "change_rate": float(data['signed_change_rate']) * 100,
+                    "volume": float(data['acc_trade_price_24h']),
+                    "trade_volume": float(data['acc_trade_volume_24h'])
+                }
+            return results
     except Exception:
-        return None
+        return {}
 
 # 3. 세션 상태 초기화
 if "cash" not in st.session_state: st.session_state.cash = 10_000_000
@@ -112,7 +116,6 @@ if "position_size" not in st.session_state: st.session_state.position_size = 0
 if "entry_price" not in st.session_state: st.session_state.entry_price = 0
 if "margin" not in st.session_state: st.session_state.margin = 0
 if "leverage" not in st.session_state: st.session_state.leverage = 10
-# 코인별 OHLC 차트 데이터를 분리 저장하는 딕셔너리
 if "ohlc_dict" not in st.session_state: st.session_state.ohlc_dict = {}
 if "running" not in st.session_state: st.session_state.running = True
 if "tp_pct" not in st.session_state: st.session_state.tp_pct = 0.0
@@ -125,15 +128,15 @@ st.sidebar.markdown("### TERMINAL SETTINGS")
 
 coin_map = {
     "BTC/KRW (비트코인)": "KRW-BTC",
-    "LTC/KRW (라이트코인)": "KRW-LTC",
+    "LTC/BTC (라이트코인)": "BTC-LTC",
     "ETH/KRW (이더리움)": "KRW-ETH",
     "TRX/KRW (트론)": "KRW-TRX",
     "USDT/KRW (테더)": "KRW-USDT",
-    "BNB/KRW (바이낸스코인)": "KRW-BNB"
+    "SOL/KRW (솔라나)": "KRW-SOL"
 }
 
 selected_coin_label = st.sidebar.selectbox("Market Ticker", list(coin_map.keys()))
-ticker = coin_map[selected_coin_label]
+active_ticker = coin_map[selected_coin_label]
 
 st.session_state.leverage = st.sidebar.select_slider(
     "Leverage (레버리지)", options=[1, 2, 5, 10, 20, 50, 75, 100, 125], value=st.session_state.leverage
@@ -162,42 +165,47 @@ if col_s2.button("Reset", use_container_width=True):
     st.session_state.trade_logs = []
     st.rerun()
 
-# 5. 시세 처리 및 차트 데이터 갱신 (유지 로직)
-market_data = get_upbit_detail(ticker)
-if market_data is None:
+# 5. 모든 코인의 시세를 한 번에 수집 및 백그라운드 데이터 일괄 갱신
+all_tickers = list(coin_map.values())
+all_market_data = get_upbit_all_details(all_tickers)
+
+if not all_market_data or active_ticker not in all_market_data:
     st.error("시세 데이터를 불러오는데 실패했습니다.")
     st.stop()
 
-curr_price = market_data['price']
 now_str = datetime.now().strftime("%H:%M:%S")
 
-# 현재 티커에 데이터 리스트가 없으면 초기화 생성
-if ticker not in st.session_state.ohlc_dict:
-    st.session_state.ohlc_dict[ticker] = []
-
-coin_ohlc = st.session_state.ohlc_dict[ticker]
-
-if not coin_ohlc:
-    init_vol = curr_price * 0.05
-    coin_ohlc.append({
-        "time": now_str, "open": curr_price, "high": curr_price,
-        "low": curr_price, "close": curr_price, "vol": init_vol
-    })
-else:
-    last_candle = coin_ohlc[-1]
-    new_open = last_candle["close"]
-    new_high = max(new_open, curr_price)
-    new_low = min(new_open, curr_price)
-    vol = abs(curr_price - new_open) * 10 + 100000
+for tkr, data in all_market_data.items():
+    if tkr not in st.session_state.ohlc_dict:
+        st.session_state.ohlc_dict[tkr] = []
+        
+    coin_ohlc = st.session_state.ohlc_dict[tkr]
+    c_price = data['price']
     
-    coin_ohlc.append({
-        "time": now_str, "open": new_open, "high": new_high,
-        "low": new_low, "close": curr_price, "vol": vol
-    })
-    if len(coin_ohlc) > 60:
-        coin_ohlc.pop(0)
+    if not coin_ohlc:
+        init_vol = c_price * 0.05
+        coin_ohlc.append({
+            "time": now_str, "open": c_price, "high": c_price,
+            "low": c_price, "close": c_price, "vol": init_vol
+        })
+    else:
+        last_candle = coin_ohlc[-1]
+        new_open = last_candle["close"]
+        new_high = max(new_open, c_price)
+        new_low = min(new_open, c_price)
+        vol = abs(c_price - new_open) * 10 + 100000
+        
+        coin_ohlc.append({
+            "time": now_str, "open": new_open, "high": new_high,
+            "low": new_low, "close": c_price, "vol": vol
+        })
+        if len(coin_ohlc) > 60:
+            coin_ohlc.pop(0)
 
-df = pd.DataFrame(coin_ohlc)
+# 현재 선택된 코인 정보 추출
+market_data = all_market_data[active_ticker]
+curr_price = market_data['price']
+df = pd.DataFrame(st.session_state.ohlc_dict[active_ticker])
 
 # 지표 계산
 df["MA5"] = df["close"].rolling(window=5).mean()
@@ -226,6 +234,8 @@ total_asset = st.session_state.cash + st.session_state.margin + pnl
 
 # 7. 상단 헤더
 change_class = "green-text" if market_data['change_rate'] >= 0 else "red-text"
+unit_suffix = "BTC" if active_ticker.startswith("BTC-") else "KRW"
+
 st.markdown(f"""
 <div class="header-card">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -234,13 +244,13 @@ st.markdown(f"""
             <span style="background-color: #2b313a; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 8px; color: #f0b90b;">{st.session_state.leverage}x</span>
         </div>
         <div>
-            <span class="gray-text">24h High:</span> <span style="margin-right: 12px; color: #ffffff;">{market_data['high']:,.0f}</span>
-            <span class="gray-text">24h Low:</span> <span style="margin-right: 12px; color: #ffffff;">{market_data['low']:,.0f}</span>
+            <span class="gray-text">24h High:</span> <span style="margin-right: 12px; color: #ffffff;">{market_data['high']:,}</span>
+            <span class="gray-text">24h Low:</span> <span style="margin-right: 12px; color: #ffffff;">{market_data['low']:,}</span>
             <span class="gray-text">24h Vol:</span> <span style="color: #ffffff;">{market_data['volume']/1e8:,.1f} 억</span>
         </div>
     </div>
     <div style="display: flex; gap: 20px; margin-top: 6px; align-items: baseline;">
-        <span style="font-size: 26px; font-weight: bold;" class="{change_class}">{curr_price:,.0f} KRW</span>
+        <span style="font-size: 26px; font-weight: bold;" class="{change_class}">{curr_price:,} {unit_suffix}</span>
         <span class="{change_class}" style="font-weight: bold;">{market_data['change_rate']:+.2f}%</span>
     </div>
 </div>
@@ -277,7 +287,7 @@ with col_left:
             line_dash="dash", 
             line_color=line_color, 
             line_width=1.5,
-            annotation_text=f"ENTRY ({st.session_state.position_type}): {st.session_state.entry_price:,.0f}",
+            annotation_text=f"ENTRY ({st.session_state.position_type}): {st.session_state.entry_price:,}",
             annotation_position="top right",
             annotation_font_color=line_color,
             row=1, col=1
@@ -351,7 +361,7 @@ with col_left:
                 st.session_state.position_size = st.session_state.input_margin * st.session_state.leverage
                 st.session_state.entry_price = curr_price
                 st.session_state.position_type = "LONG"
-                st.session_state.trade_logs.insert(0, f"[{now_str}] OPEN LONG @ {curr_price:,.0f} KRW")
+                st.session_state.trade_logs.insert(0, f"[{now_str}] OPEN LONG @ {curr_price:,} {unit_suffix}")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -364,7 +374,7 @@ with col_left:
                 st.session_state.position_size = st.session_state.input_margin * st.session_state.leverage
                 st.session_state.entry_price = curr_price
                 st.session_state.position_type = "SHORT"
-                st.session_state.trade_logs.insert(0, f"[{now_str}] OPEN SHORT @ {curr_price:,.0f} KRW")
+                st.session_state.trade_logs.insert(0, f"[{now_str}] OPEN SHORT @ {curr_price:,} {unit_suffix}")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -414,8 +424,8 @@ with col_right:
         holding_qty = st.session_state.position_size / st.session_state.entry_price if st.session_state.entry_price > 0 else 0
         
         c_p1, c_p2 = st.columns(2)
-        c_p1.metric("평단가 (Avg Entry)", f"{st.session_state.entry_price:,.0f} KRW")
-        c_p2.metric("청산가 (Liq Price)", f"{liq:,.0f} KRW")
+        c_p1.metric("평단가 (Avg Entry)", f"{st.session_state.entry_price:,} {unit_suffix}")
+        c_p2.metric("청산가 (Liq Price)", f"{liq:,} {unit_suffix}")
         
         c_p3, c_p4 = st.columns(2)
         c_p3.metric("보유 수량", f"{holding_qty:,.4f}")
@@ -431,13 +441,13 @@ with col_right:
     st.markdown("##### REAL-TIME ORDERBOOK (호가창)")
     for i in range(3, 0, -1):
         ask_p = curr_price + (i * (curr_price * 0.001))
-        ask_vol = int(ask_p * 0.002)
-        st.caption(f"매도호가 {ask_p:,.0f} KRW | 잔량: {ask_vol:,} Qty")
-    st.markdown(f"**현재가 {curr_price:,.0f} KRW**")
+        ask_vol = int(ask_p * 0.002) if unit_suffix == "KRW" else ask_p * 0.002
+        st.caption(f"매도호가 {ask_p:,} {unit_suffix} | 잔량: {ask_vol:,} Qty")
+    st.markdown(f"**현재가 {curr_price:,} {unit_suffix}**")
     for i in range(1, 4):
         bid_p = curr_price - (i * (curr_price * 0.001))
-        bid_vol = int(bid_p * 0.0025)
-        st.caption(f"매수호가 {bid_p:,.0f} KRW | 잔량: {bid_vol:,} Qty")
+        bid_vol = int(bid_p * 0.0025) if unit_suffix == "KRW" else bid_p * 0.0025
+        st.caption(f"매수호가 {bid_p:,} {unit_suffix} | 잔량: {bid_vol:,} Qty")
     st.markdown('</div>', unsafe_allow_html=True)
 
     with st.expander("Execution Logs", expanded=True):
