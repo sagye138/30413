@@ -25,11 +25,10 @@ st.markdown("""
     .red-text { color: #f6465d !important; }
     .gray-text { color: #848e9c !important; }
     
-    /* 입력창 및 선택창 기본 스타일 */
-    div[data-baseweb="input"], div[data-baseweb="select"] > div {
+    /* 입력창 기본 스타일 */
+    div[data-baseweb="input"] {
         background-color: #1e2329 !important;
         border: 1px solid #474d57 !important;
-        color: #ffffff !important;
         border-radius: 4px !important;
     }
     input {
@@ -37,17 +36,30 @@ st.markdown("""
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
     }
-    
-    /* 드롭다운 메뉴 스타일 */
-    div[data-baseweb="popover"] div, div[data-baseweb="menu"] {
+
+    /* 코인 선택창 (Selectbox) 강력 스타일 덮어쓰기 */
+    div[data-baseweb="select"] {
         background-color: #1e2329 !important;
         color: #ffffff !important;
     }
-    li[role="option"] {
+    div[data-baseweb="select"] * {
+        background-color: #1e2329 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    /* 드롭다운 메뉴 열렸을 때 (Pop-over) */
+    div[data-baseweb="popover"] {
+        background-color: #1e2329 !important;
+    }
+    div[data-baseweb="popover"] * {
         background-color: #1e2329 !important;
         color: #ffffff !important;
     }
-    li[role="option"]:hover, li[role="option"][aria-selected="true"] {
+    ul[role="listbox"] li {
+        background-color: #1e2329 !important;
+        color: #ffffff !important;
+    }
+    ul[role="listbox"] li:hover {
         background-color: #2b313a !important;
         color: #0ecb81 !important;
     }
@@ -298,11 +310,9 @@ with col_left:
 
     o_col1, o_col2 = st.columns(2)
     with o_col1:
-        # 쉼표(,) 적용 가능한 텍스트 입력창 처리
         formatted_val = f"{int(st.session_state.input_margin):,}"
         user_input_str = st.text_input("증거금 직접 입력 (KRW)", value=formatted_val)
         
-        # 입력받은 텍스트에서 쉼표 및 문자 제거 후 숫자로 파싱
         try:
             clean_val = int("".join(filter(str.isdigit, user_input_str)))
             st.session_state.input_margin = min(clean_val, int(st.session_state.cash))
@@ -390,10 +400,17 @@ with col_right:
         st.markdown(f"### <span class='{pos_color}'>{st.session_state.position_type}</span> <span style='font-size:16px;'>{st.session_state.leverage}x</span>", unsafe_allow_html=True)
         
         liq = st.session_state.entry_price * (1 - (1/st.session_state.leverage)) if st.session_state.position_type == "LONG" else st.session_state.entry_price * (1 + (1/st.session_state.leverage))
+        holding_qty = st.session_state.position_size / st.session_state.entry_price if st.session_state.entry_price > 0 else 0
         
+        # 평단가 및 세부 정보 표시
         c_p1, c_p2 = st.columns(2)
-        c_p1.metric("진입가 (Entry)", f"{st.session_state.entry_price:,.0f}")
-        c_p2.metric("청산가 (Liq)", f"{liq:,.0f}")
+        c_p1.metric("평단가 (Avg Entry)", f"{st.session_state.entry_price:,.0f} KRW")
+        c_p2.metric("청산가 (Liq Price)", f"{liq:,.0f} KRW")
+        
+        c_p3, c_p4 = st.columns(2)
+        c_p3.metric("보유 수량", f"{holding_qty:,.4f}")
+        c_p4.metric("포지션 규모", f"{int(st.session_state.position_size):,} KRW")
+        
         st.metric("미실현 손익 (PnL)", f"{int(pnl):+} KRW", delta=f"{pnl_pct:+.2f}%", delta_color="normal")
     else:
         st.info("보유 중인 포지션이 없습니다.")
