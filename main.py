@@ -49,12 +49,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 2. 마켓 매핑 (라이트코인 상장폐지 항목 포함)
+# 2. 마켓 매핑 (리플 제거)
 coin_map = {
     "BTC/KRW (비트코인)": "KRW-BTC",
     "ETH/KRW (이더리움)": "KRW-ETH",
     "LTC/KRW (라이트코인 - 상장폐지)": "DELISTED-LTC",
-    "XRP/KRW (리플)": "KRW-XRP",
     "BNB/KRW (바이낸스코인)": "KRW-BNB",
     "TRX/KRW (트론)": "KRW-TRX",
     "USDT/KRW (테더)": "KRW-USDT"
@@ -107,7 +106,7 @@ def get_upbit_ticker(ticker):
     except Exception:
         pass
     
-    fallback_prices = {"KRW-BTC": 90000000, "KRW-ETH": 4000000, "KRW-XRP": 800, "KRW-BNB": 800000, "KRW-TRX": 180, "KRW-USDT": 1380}
+    fallback_prices = {"KRW-BTC": 90000000, "KRW-ETH": 4000000, "KRW-BNB": 800000, "KRW-TRX": 180, "KRW-USDT": 1380}
     base_p = fallback_prices.get(ticker, 100000)
     return {
         "price": base_p, "high": base_p * 1.02, "low": base_p * 0.98,
@@ -160,7 +159,7 @@ if active_ticker.startswith("DELISTED"):
     </div>
     """, unsafe_allow_html=True)
     
-    st.stop() # 화면 하단 실행 중단
+    st.stop()
 
 # 7. 정상 코인 데이터 업데이트
 market_data = get_upbit_ticker(active_ticker)
