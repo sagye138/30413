@@ -51,7 +51,7 @@ coin_map = {
     "SOL/KRW (솔라나)": "KRW-SOL"
 }
 
-# 3. 세션 완전 보존 초기화 (기존 세션 데이터 절대 유실되지 않도록 감싸기)
+# 3. 세션 초기화
 def init_session():
     if "cash" not in st.session_state: st.session_state["cash"] = 10_000_000
     if "position_type" not in st.session_state: st.session_state["position_type"] = None
@@ -65,7 +65,6 @@ def init_session():
     if "trade_logs" not in st.session_state: st.session_state["trade_logs"] = []
     if "input_margin" not in st.session_state: st.session_state["input_margin"] = int(st.session_state["cash"])
     
-    # ohlc_dict 안전 초기화
     if "ohlc_dict" not in st.session_state or not isinstance(st.session_state["ohlc_dict"], dict):
         st.session_state["ohlc_dict"] = {}
         
@@ -75,27 +74,24 @@ def init_session():
 
 init_session()
 
-# 4. API 시세 수집 함수 (안전 예외처리)
-def get_upbit_all_details(tickers):
+# 4. API 시세 수집 함수 (캐싱 적용으로 지연 최소화)
+@st.cache_data(ttl=1, show_spinner=False)
+def get_upbit_ticker(ticker):
     try:
-        ticker_str = ",".join(tickers)
-        url = f"https://api.upbit.com/v1/ticker?markets={ticker_str}"
+        url = f"https://api.upbit.com/v1/ticker?markets={ticker}"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
-            data_list = json.loads(response.read().decode())
-            results = {}
-            for data in data_list:
-                results[data['market']] = {
-                    "price": float(data['trade_price']),
-                    "high": float(data['high_price']),
-                    "low": float(data['low_price']),
-                    "change_rate": float(data['signed_change_rate']) * 100,
-                    "volume": float(data['acc_trade_price_24h']),
-                    "trade_volume": float(data['acc_trade_volume_24h'])
-                }
-            return results
+        with urllib.request.urlopen(req, timeout=1.5) as response:
+            data = json.loads(response.read().decode())[0]
+            return {
+                "price": float(data['trade_price']),
+                "high": float(data['high_price']),
+                "low": float(data['low_price']),
+                "change_rate": float(data['signed_change_rate']) * 100,
+                "volume": float(data['acc_trade_price_24h']),
+                "trade_volume": float(data['acc_trade_volume_24h'])
+            }
     except Exception:
-        return {}
+        return None
 
 # 5. 사이드바 - 설정
 st.sidebar.markdown("### TERMINAL SETTINGS")
@@ -129,51 +125,43 @@ if col_s2.button("Reset", use_container_width=True):
     st.session_state.trade_logs = []
     st.rerun()
 
-# 6. 시세 데이터 가져오기 및 세션 축적
-all_tickers = list(coin_map.values())
-all_market_data = get_upbit_all_details(all_tickers)
-
+# 6. 선택된 단일 코인 시세만 고속 요청
+market_data = get_upbit_ticker(active_ticker)
 now_str = datetime.now().strftime("%H:%M:%S")
 
-# 데이터 수집 성공 시 전체 코인 업데이트 진행
-if all_market_data:
-    for tkr in all_tickers:
-        if tkr in all_market_data:
-            c_price = all_market_data[tkr]['price']
-            coin_ohlc = st.session_state.ohlc_dict[tkr]
-            
-            if not coin_ohlc:
-                init_vol = c_price * 0.05
-                coin_ohlc.append({
-                    "time": now_str, "open": c_price, "high": c_price,
-                    "low": c_price, "close": c_price, "vol": init_vol
-                })
-            else:
-                last_candle = coin_ohlc[-1]
-                new_open = last_candle["close"]
-                new_high = max(new_open, c_price)
-                new_low = min(new_open, c_price)
-                vol = abs(c_price - new_open) * 10 + 100000
-                
-                coin_ohlc.append({
-                    "time": now_str, "open": new_open, "high": new_high,
-                    "low": new_low, "close": c_price, "vol": vol
-                })
-                if len(coin_ohlc) > 60:
-                    coin_ohlc.pop(0)
+if market_data:
+    c_price = market_data['price']
+    coin_ohlc = st.session_state.ohlc_dict[active_ticker]
+    
+    if not coin_ohlc:
+        init_vol = c_price * 0.05
+        coin_ohlc.append({
+            "time": now_str, "open": c_price, "high": c_price,
+            "low": c_price, "close": c_price, "vol": init_vol
+        })
+    else:
+        last_candle = coin_ohlc[-1]
+        new_open = last_candle["close"]
+        new_high = max(new_open, c_price)
+        new_low = min(new_open, c_price)
+        vol = abs(c_price - new_open) * 10 + 100000
+        
+        coin_ohlc.append({
+            "time": now_str, "open": new_open, "high": new_high,
+            "low": new_low, "close": c_price, "vol": vol
+        })
+        if len(coin_ohlc) > 60:
+            coin_ohlc.pop(0)
 
-# 선택된 코인 데이터 및 데이터프레임 추출
+# 세션 데이터 확인
 active_ohlc = st.session_state.ohlc_dict.get(active_ticker, [])
 
-# 데이터 누적이 진행 중일 때 안내 화면
-if not active_ohlc or active_ticker not in all_market_data:
-    st.warning("실시간 세션 데이터를 수집 중입니다... 잠시만 기다려주세요.")
-    time.sleep(1)
+if not active_ohlc or not market_data:
+    st.info("데이터 로딩 중...")
+    time.sleep(0.5)
     st.rerun()
 
-market_data = all_market_data[active_ticker]
 curr_price = market_data['price']
-
 df = pd.DataFrame(active_ohlc)
 
 # 지표 계산
