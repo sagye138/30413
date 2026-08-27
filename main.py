@@ -37,31 +37,26 @@ st.markdown("""
         -webkit-text-fill-color: #ffffff !important;
     }
 
-    /* 코인 선택창 (Selectbox) 강력 스타일 덮어쓰기 */
-    div[data-baseweb="select"] {
-        background-color: #1e2329 !important;
-        color: #ffffff !important;
-    }
-    div[data-baseweb="select"] * {
+    /* 코인 선택창 (Selectbox) 전체 요소 강력 CSS 덮어쓰기 */
+    div[data-baseweb="select"], 
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="popover"],
+    div[data-baseweb="popover"] *,
+    ul[role="listbox"],
+    ul[role="listbox"] li,
+    div[role="option"] {
         background-color: #1e2329 !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
     }
-    /* 드롭다운 메뉴 열렸을 때 (Pop-over) */
-    div[data-baseweb="popover"] {
-        background-color: #1e2329 !important;
-    }
-    div[data-baseweb="popover"] * {
-        background-color: #1e2329 !important;
-        color: #ffffff !important;
-    }
-    ul[role="listbox"] li {
-        background-color: #1e2329 !important;
-        color: #ffffff !important;
-    }
-    ul[role="listbox"] li:hover {
+    
+    /* 선택목록 마우스 호버 시 처리 */
+    ul[role="listbox"] li:hover,
+    div[role="option"]:hover,
+    li[aria-selected="true"] {
         background-color: #2b313a !important;
         color: #0ecb81 !important;
+        -webkit-text-fill-color: #0ecb81 !important;
     }
     
     /* 라벨 및 텍스트 흰색 설정 */
@@ -272,6 +267,20 @@ with col_left:
     if show_ma60:
         fig.add_trace(go.Scatter(x=df['time'], y=df['MA60'], mode='lines', line=dict(color='#00bfff', width=1.2), name="MA60"), row=1, col=1)
         
+    # 차트 내 진입 평단가 선 표시 (포지션 보유 시)
+    if st.session_state.position_type and st.session_state.entry_price > 0:
+        line_color = "#0ecb81" if st.session_state.position_type == "LONG" else "#f6465d"
+        fig.add_hline(
+            y=st.session_state.entry_price, 
+            line_dash="dash", 
+            line_color=line_color, 
+            line_width=1.5,
+            annotation_text=f"ENTRY ({st.session_state.position_type}): {st.session_state.entry_price:,.0f}",
+            annotation_position="top right",
+            annotation_font_color=line_color,
+            row=1, col=1
+        )
+
     # 거래량
     colors = ['#0ecb81' if c >= o else '#f6465d' for c, o in zip(df['close'], df['open'])]
     fig.add_trace(go.Bar(x=df['time'], y=df['vol'], marker_color=colors, name="Volume"), row=2, col=1)
@@ -402,7 +411,6 @@ with col_right:
         liq = st.session_state.entry_price * (1 - (1/st.session_state.leverage)) if st.session_state.position_type == "LONG" else st.session_state.entry_price * (1 + (1/st.session_state.leverage))
         holding_qty = st.session_state.position_size / st.session_state.entry_price if st.session_state.entry_price > 0 else 0
         
-        # 평단가 및 세부 정보 표시
         c_p1, c_p2 = st.columns(2)
         c_p1.metric("평단가 (Avg Entry)", f"{st.session_state.entry_price:,.0f} KRW")
         c_p2.metric("청산가 (Liq Price)", f"{liq:,.0f} KRW")
